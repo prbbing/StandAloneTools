@@ -47,7 +47,7 @@ class MuonValAnalyzer : public edm::EDAnalyzer
     public:
       void analyze (const edm::Event &, const edm::EventSetup &);
       double LxyBeamSpot(double vx, double vy, double refx, double refy);
-      bool Match(double eta_1, double phi_1, double eta_2, double phi_2);
+      vector<double> Match(reco::GenParticle gen, reco::Track track);
       MuonValAnalyzer (const edm::ParameterSet &);
       ~MuonValAnalyzer();
       virtual void endJob() override; 
@@ -61,7 +61,9 @@ class MuonValAnalyzer : public edm::EDAnalyzer
       edm::InputTag beamSpot_;
       edm::InputTag genParticle_;
       edm::InputTag primaryVertex_;
-      double deltaRCut_;
+      double matchDelRCut_;
+      double matchRelPtCut_;
+      double LxyCut_;
       edm::Handle<reco::GenParticleCollection> genParticles;     
       TH1D* genMuFromStopLxy; 
       TH1D* recoEffLxy;

@@ -9,7 +9,9 @@ MuonValAnalyzer::MuonValAnalyzer (const edm::ParameterSet &cfg) :
   beamSpot_ (cfg.getParameter<edm::InputTag> ("beamSpot")),
   genParticle_ (cfg.getParameter<edm::InputTag> ("genParticle")),
   primaryVertex_ (cfg.getParameter<edm::InputTag> ("primaryVertex")),
-  deltaRCut_ (cfg.getParameter<double> ("deltaRCut")),
+  matchDelRCut_ (cfg.getParameter<double> ("matchDelRCut")),
+  matchRelPtCut_ (cfg.getParameter<double> ("matchRelPtCut")),
+  LxyCut_ (cfg.getParameter<double> ("LxyCut")),
   LxyBins_ (cfg.getParameter<vector<double>> ("LxyBins")),
   PtResBins_ (cfg.getParameter<vector<double>> ("PtResBins"))
  {
@@ -44,36 +46,38 @@ MuonValAnalyzer::analyze(const edm::Event &event, const edm::EventSetup &setup)
     } 
   numVertex->Fill(numOfVertex);  
 
-
   for (reco::GenParticleCollection::const_iterator genParticle = genParticles->begin(); genParticle != genParticles->end(); genParticle++)
     {
       double Lxy = fabs(LxyBeamSpot(genParticle->vx(), genParticle->vy(), BeamSpotX, BeamSpotY));
+      if(Lxy > LxyCut_)
+        continue;
       double recoPt = 0;
       double recoCharge = 0;
       if(fabs(genParticle->pdgId()) == 13 && fabs(genParticle->mother()->pdgId()) == 1000006 && genParticle->pt() > 10 && fabs(genParticle->eta()) < 2.4)
         {
           genMuFromStopLxy->Fill(Lxy);
           bool toFill1D = false;
+          reco::GenParticle currentGen = (*genParticle); 
           if(event.getByLabel(recoTrack_, TrackCollection))
             { 
-              double deltaRTmp = 999;
+              map<double, reco::Track> matchedMapTracks;
               for(reco::TrackCollection::const_iterator recoTrack = TrackCollection ->begin(); recoTrack != TrackCollection->end(); recoTrack++)
                 {
-                    double DeltaR = deltaR(genParticle->eta(),genParticle->phi(),recoTrack->eta(),recoTrack->phi());
-                    if(DeltaR < 1) 
-                      deltaRVsLxy->Fill(Lxy, DeltaR);
-                    if(Match(genParticle->eta(),genParticle->phi(),recoTrack->eta(),recoTrack->phi()))
+                  reco::Track currentTrack = (*recoTrack);
+                  double DeltaR = deltaR(genParticle->eta(),genParticle->phi(),recoTrack->eta(),recoTrack->phi());
+                  if(DeltaR < 1) 
+                    deltaRVsLxy->Fill(Lxy, DeltaR);
+                  if(Match(currentGen, currentTrack).at(0) < matchDelRCut_ && Match(currentGen, currentTrack).at(1) < matchRelPtCut_)
+                    matchedMapTracks.insert(pair<double, reco::Track>(Match(currentGen, currentTrack).at(0), currentTrack));
+                }
+                  if(matchedMapTracks.size())
                     {
                       toFill1D = true;
-                      if(deltaRTmp > deltaR(genParticle->eta(),genParticle->phi(),recoTrack->eta(),recoTrack->phi()))
-                        {
-                          deltaRTmp = deltaR(genParticle->eta(),genParticle->phi(),recoTrack->eta(),recoTrack->phi()); 
-                          recoPt = recoTrack->pt();   
-  			  recoCharge = recoTrack->charge();
-                        }
-                    } 
-                }
-            }
+                      recoPt = matchedMapTracks.begin()->second.pt();   
+  	              recoCharge = matchedMapTracks.begin()->second.charge();
+                    }
+              matchedMapTracks.clear(); 
+           } 
           if(toFill1D)
             {
               recoMatchedGenMuFromStopLxy->Fill(Lxy); 
@@ -81,7 +85,7 @@ MuonValAnalyzer::analyze(const edm::Event &event, const edm::EventSetup &setup)
               double ptResolution = (recoCharge/recoPt - genParticle->charge()/genParticle->pt())*genParticle->pt()/genParticle->charge(); 
               ptRes->Fill(ptResolution);
             } 
-        }
+       }
     }
 }
 double 
@@ -90,12 +94,15 @@ MuonValAnalyzer::LxyBeamSpot(double vx, double vy, double refx, double refy)
   return sqrt(pow(vx-refx,2) + pow(vy-refy, 2));
 }
 
-
-bool 
-MuonValAnalyzer::Match(double eta_1, double phi_1, double eta_2, double phi_2)
+vector<double>
+MuonValAnalyzer::Match(reco::GenParticle gen, reco::Track track)
 {
-  bool matched = deltaR(eta_1,phi_1,eta_2,phi_2) < deltaRCut_ ? true:false;
-  return matched;
+  vector<double> matchedValues;
+  double delRmatch = deltaR(gen.eta(),gen.phi(),track.eta(),track.phi());
+  matchedValues.push_back(delRmatch);
+  double relPtmatch = fabs((track.pt()-gen.pt())/gen.pt()); 
+  matchedValues.push_back(relPtmatch);
+  return matchedValues;
 }
 
 
