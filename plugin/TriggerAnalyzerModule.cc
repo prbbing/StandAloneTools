@@ -4,7 +4,7 @@ using namespace std;
 using namespace reco;
 using namespace edm;
 
-//An analyzer to get the hlt/reco turn on curves. wrt gen
+//An analyzer to get the efficiency w.r.t reco quantities. 
 TriggerAnalyzerModule::TriggerAnalyzerModule (const edm::ParameterSet &cfg) :
   beamSpot_ (cfg.getParameter<edm::InputTag> ("beamSpot")),
   recoMuon_ (cfg.getParameter<edm::InputTag> ("recoMuons")),
