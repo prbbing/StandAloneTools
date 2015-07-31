@@ -58,11 +58,15 @@ class TriggerAnalyzerModule : public edm::EDProducer
       //void analyze (const edm::Event &, const edm::EventSetup &);
       bool match(double eta_1, double phi_1, double eta_2, double phi_2);
       double dxyBeamSpot(double vx, double px, double vy, double py, double pt, double refx, double refy);
-      bool tagToBool(const string tag, bool loose, bool medium, bool tight);
+      double dZBeamSpot(double vx, double px, double vy, double py, double vz, double pz, double pt, double refx, double refy, double refz);
+      bool tagToBool(const string tag, bool cosmic, bool loose, bool medium, bool tight);
       vector<reco::Muon> recoMuonSelector(const edm::InputTag recoMuonTag, edm::Event &event);
       vector<reco::Muon> recoMuonLooper(const trigger::TriggerObjectCollection Objects, vector<reco::Muon> recoMuonSet);
       vector<reco::Track> recoTrackSelector(const edm::InputTag recoTrackTag, edm::Event &event);
+      vector<reco::Track> recoTrackFilter(const vector<edm::ParameterSet> filters, edm::Event &event, vector<reco::Track> inputTrackSet);
+      vector<reco::Muon> recoMuonFilter(const vector<edm::ParameterSet> filters, edm::Event &event, vector<reco::Muon> inputMuonSet);
       vector<reco::Track> recoTrackLooper(const trigger::TriggerObjectCollection Objects, vector<reco::Track> recoTrackSet);
+      bool passCosmic(const reco::Track recoTrack, const reco::Track recoTrack2, double angleCut);
       void fillMuonHistogram(vector<reco::Muon> recoMuonSet, TH1D* histogram);
       void fillTrackHistogram(vector<reco::Track> recoTrackSet, TH1D* histogram);
       vector<string> getStringSegments(string input, char delim);
@@ -84,6 +88,7 @@ class TriggerAnalyzerModule : public edm::EDProducer
       string filterTag_;
       double ptCut_;
       vector<edm::ParameterSet> histograms_;
+      vector<edm::ParameterSet> filters_;
       edm::Handle<edm::TriggerResults> triggerResults; 
       string l1FilterName_;
       string l2FilterName_;
@@ -97,6 +102,7 @@ class TriggerAnalyzerModule : public edm::EDProducer
       vector<TH1D*> effHistograms;
       double refx_;
       double refy_;
+      double refz_;
 };  
 
 //#endif

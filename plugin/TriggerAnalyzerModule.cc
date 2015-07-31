@@ -13,7 +13,8 @@ TriggerAnalyzerModule::TriggerAnalyzerModule (const edm::ParameterSet &cfg) :
   triggerResultsLabel_ (cfg.getParameter<edm::InputTag> ("triggerResultsLabel")),
   filterTag_ (cfg.getParameter<string> ("filterTag")),
   ptCut_ (cfg.getParameter<double> ("ptCut")),
-  histograms_ (cfg.getParameter<vector<edm::ParameterSet>>("histograms_")),
+  histograms_ (cfg.getParameter<vector<edm::ParameterSet>>("histograms")),
+  filters_ (cfg.getParameter<vector<edm::ParameterSet>>("filters")),
   l1FilterName_ (cfg.getParameter<string> ("l1FilterName")),
   l2FilterName_ (cfg.getParameter<string> ("l2FilterName")),
   iDTag_ (cfg.getParameter<string> ("iDTag")),
@@ -46,11 +47,13 @@ TriggerAnalyzerModule::produce(edm::Event &event, const edm::EventSetup &setup)
     {
       refx_ = BeamSpot->x0();
       refy_ = BeamSpot->y0();
+      refz_ = BeamSpot->z0();
     }
   else
    {
      refx_ = 0;
      refy_ = 0;
+     refz_ = 0;
    }
   event.getByLabel(triggerSummaryLabel_, triggerSummary);
   event.getByLabel(triggerResultsLabel_, triggerResults); 
@@ -84,13 +87,14 @@ TriggerAnalyzerModule::produce(edm::Event &event, const edm::EventSetup &setup)
   if(muonStudy_)
     {
       vector<reco::Muon> slimmedRecoMuon = recoMuonSelector(recoMuon_, event);
-      vector<reco::Muon> l1MatchedRecoMuon = recoMuonLooper(l1Objects, slimmedRecoMuon);
+      vector<reco::Muon> filteredRecoMuon = recoMuonFilter(filters_, event, slimmedRecoMuon);
+      vector<reco::Muon> l1MatchedRecoMuon = recoMuonLooper(l1Objects, filteredRecoMuon);
       vector<reco::Muon> l2MatchedRecoMuon = recoMuonLooper(l2Objects, l1MatchedRecoMuon); 
       if(l1OnRaw_)
         {
           for(uint j = 0; j < vanilaHistograms.size(); j++)
             {
-              fillMuonHistogram(slimmedRecoMuon, vanilaHistograms[j]);    
+              fillMuonHistogram(filteredRecoMuon, vanilaHistograms[j]);    
               fillMuonHistogram(l1MatchedRecoMuon, matchedHistograms[j]);
               fillMuonHistogram(l1MatchedRecoMuon, effHistograms[j]);
             }
@@ -107,17 +111,20 @@ TriggerAnalyzerModule::produce(edm::Event &event, const edm::EventSetup &setup)
        l2MatchedRecoMuon.clear();
        l1MatchedRecoMuon.clear();
        slimmedRecoMuon.clear();
+       filteredRecoMuon.clear();
+    
     }
   if(trackStudy_)
     {
       vector<reco::Track> slimmedRecoTrack = recoTrackSelector(recoTrack_, event);
-      vector<reco::Track> l1MatchedRecoTrack = recoTrackLooper(l1Objects, slimmedRecoTrack);
+      vector<reco::Track> filteredRecoTrack = recoTrackFilter(filters_, event, slimmedRecoTrack);
+      vector<reco::Track> l1MatchedRecoTrack = recoTrackLooper(l1Objects, filteredRecoTrack);
       vector<reco::Track> l2MatchedRecoTrack = recoTrackLooper(l2Objects, l1MatchedRecoTrack); 
       if(l1OnRaw_)
         {
           for(uint j = 0; j < vanilaHistograms.size(); j++)
             {
-              fillTrackHistogram(slimmedRecoTrack, vanilaHistograms[j]);    
+              fillTrackHistogram(filteredRecoTrack, vanilaHistograms[j]);    
               fillTrackHistogram(l1MatchedRecoTrack, matchedHistograms[j]);
               fillTrackHistogram(l1MatchedRecoTrack, effHistograms[j]);
             }
@@ -134,6 +141,7 @@ TriggerAnalyzerModule::produce(edm::Event &event, const edm::EventSetup &setup)
        l2MatchedRecoTrack.clear();
        l1MatchedRecoTrack.clear();
        slimmedRecoTrack.clear();
+       filteredRecoTrack.clear();
      }
 }
 double 
@@ -142,14 +150,30 @@ TriggerAnalyzerModule::dxyBeamSpot(double vx, double px, double vy, double py, d
   return (-(vx-refx)*py + (vy-refy)*px)/pt;
 }
 
+double 
+TriggerAnalyzerModule::dZBeamSpot(double vx, double px, double vy, double py, double vz, double pz, double pt, double refx, double refy, double refz)
+{
+  return (vz - refz) - ((vx - refx)*px + (vy - refy)*py)/pt*(pz/pt);
+}
 
 bool 
 TriggerAnalyzerModule::match(double eta_1, double phi_1, double eta_2, double phi_2)
 {
-  bool matched = deltaR(eta_1,phi_1,eta_2,phi_2) < 0.1 ? true:false;
+  bool matched = deltaR(eta_1,phi_1,eta_2,phi_2) < 0.5 ? true:false;
   return matched;
 }
 
+bool 
+TriggerAnalyzerModule::passCosmic(const reco::Track recoTrack, const reco::Track recoTrack2, double angleCut)
+{
+  bool matched = false;
+  static const double pi = 3.1415926535897932384626433832795028841971693993751058;
+  TVector3 threeVector1(recoTrack.px(), recoTrack.py(), recoTrack.pz());
+  TVector3 threeVector2(recoTrack2.px(), recoTrack2.py(), recoTrack2.pz());
+  double value = (pi-threeVector1.Angle(threeVector2));
+  if(log(value) < angleCut){matched = true;} 
+  return matched;
+}
 
 void
 TriggerAnalyzerModule::fillMuonHistogram(vector<reco::Muon> recoMuonSet, TH1D* histogram)
@@ -180,7 +204,8 @@ TriggerAnalyzerModule::trackVariables(const reco::Track track, string variable)
   if(variable == "Pt") value = track.pt(); 
   if(variable == "Eta") value = track.eta(); 
   if(variable == "Phi") value = track.phi(); 
-  if(variable == "Dxy") value = dxyBeamSpot(track.vx(), track.px(), track.vy(), track.py(), track.pt(), refx_, refy_); 
+  if(variable == "Dxy") value = fabs(dxyBeamSpot(track.vx(), track.px(), track.vy(), track.py(), track.pt(), refx_, refy_)); 
+  if(variable == "Dz")  value = fabs(dZBeamSpot(track.vx(), track.px(), track.vy(), track.py(), track.vz(), track.pz(), track.pt(), refx_, refy_, refz_));
   return value;
 }
 
@@ -191,7 +216,8 @@ TriggerAnalyzerModule::muonVariables(const reco::Muon muon, string variable)
   if(variable == "Pt") value = muon.pt(); 
   if(variable == "Eta") value = muon.eta(); 
   if(variable == "Phi") value = muon.phi(); 
-  if(variable == "Dxy") value = dxyBeamSpot(muon.vx(), muon.px(), muon.vy(), muon.py(), muon.pt(), refx_, refy_); 
+  if(variable == "Dxy") value = fabs(dxyBeamSpot(muon.vx(), muon.px(), muon.vy(), muon.py(), muon.pt(), refx_, refy_)); 
+  if(variable == "Dz")  value = fabs(dZBeamSpot(muon.vx(), muon.px(), muon.vy(), muon.py(), muon.vz(), muon.pz(), muon.pt(), refx_, refy_, refz_));
   return value;
 }
 
@@ -212,19 +238,23 @@ TriggerAnalyzerModule::recoMuonSelector(const edm::InputTag recoMuonTag, edm::Ev
                        recoMuon->innerTrack()->hitPattern().numberOfValidPixelHits() > 0 &&
                        recoMuon->innerTrack()->hitPattern().trackerLayersWithMeasurement() > 5 &&
                        recoMuon->pt() > ptCut_ && fabs(recoMuon->eta()) < 2.4 && recoMuon->isPFMuon(); 
-          //bool goodGlob = recoMuon->isGlobalMuon() && 
-          //                recoMuon->globalTrack()->normalizedChi2() < 3; 
-          //                recoMuon->combinedQuality().chi2LocalPosition < 12 && 
-          //                recoMuon->combinedQuality().trkKink < 20;
-          //bool medium =  recoMuon->innerTrack()->validFraction() > 0.8 &&
-          //               muon::segmentCompatibility(thisParticle) > (goodGlob ? 0.303 : 0.451) &&
-          //               muon::isLooseMuon(thisParticle) &&
-          //               recoMuon->pt() > ptCut_ && fabs(recoMuon->eta()) < 2.4 &&  goodGlob;
-          //bool loose = muon::isLooseMuon(thisParticle);
-          //             recoMuon->isGlobalMuon() && recoMuon->isPFMuon();
-          //bool passId = tagToBool(iDTag_, loose, medium, tight);
-          //if(passId)
-          if(tight)
+          bool goodGlob = recoMuon->isGlobalMuon() && 
+                          recoMuon->globalTrack()->normalizedChi2() < 3; 
+                          recoMuon->combinedQuality().chi2LocalPosition < 12 && 
+                          recoMuon->combinedQuality().trkKink < 20;
+          bool medium =  recoMuon->isGlobalMuon() &&
+                         recoMuon->innerTrack()->validFraction() > 0.8 &&
+                         muon::segmentCompatibility(thisParticle) > (goodGlob ? 0.303 : 0.451) &&
+                         muon::isLooseMuon(thisParticle) &&
+                         recoMuon->pt() > ptCut_ && fabs(recoMuon->eta()) < 2.4 &&  goodGlob;
+          bool loose = muon::isLooseMuon(thisParticle);
+                       recoMuon->isGlobalMuon() && recoMuon->isPFMuon();
+          bool cosmic = recoMuon->outerTrack()->hitPattern().numberOfValidMuonCSCHits() == 0 &&
+                             recoMuon->outerTrack()->hitPattern().dtStationsWithValidHits() >= 2 &&
+                             recoMuon->outerTrack()->hitPattern().numberOfValidMuonRPCHits() >= 2 &&
+                             recoMuon->pt() > ptCut_;
+          bool passId = tagToBool(iDTag_, cosmic, loose, medium, tight);
+          if(passId)
             {
               selectedRecoMuon.push_back(thisParticle);
             }
@@ -232,6 +262,102 @@ TriggerAnalyzerModule::recoMuonSelector(const edm::InputTag recoMuonTag, edm::Ev
        }
   return selectedRecoMuon;
   selectedRecoMuon.clear();
+}
+
+vector<reco::Muon> 
+TriggerAnalyzerModule::recoMuonFilter(const vector<edm::ParameterSet> filters, edm::Event &event, vector<reco::Muon> inputMuonSet)
+{
+  vector<reco::Muon> filteredRecoMuon = inputMuonSet;
+  for(uint j = 0; j < filters.size(); j++)
+    {
+      if(filters[j].getParameter<string>("type") == "filterObject")
+        {
+          event.getByLabel(triggerSummaryLabel_, triggerSummary);
+          trigger::TriggerObjectCollection allTriggerObjects = triggerSummary->getObjects(); 
+          string filterName = filters[j].getParameter<string>("filterObjectName");
+          edm::InputTag filterTag = edm::InputTag(filterName, "", filterTag_);
+          size_t filterIndex = (*triggerSummary).filterIndex(filterTag);
+          trigger::TriggerObjectCollection filterObjects;
+          if(filterIndex < (*triggerSummary).sizeFilters())
+            { 
+              const trigger::Keys &keysObjects = (*triggerSummary).filterKeys(filterIndex);
+              for(size_t j = 0; j < keysObjects.size(); j++)
+                {
+                  trigger::TriggerObject foundObject = (allTriggerObjects)[keysObjects[j]];
+                  filterObjects.push_back(foundObject);
+                }
+            }
+          if(double(filterObjects.size()) < filters[j].getParameter<double>("number"))
+             filteredRecoMuon.clear();
+         }
+     }
+   return filteredRecoMuon;
+   filteredRecoMuon.clear();
+}
+
+
+vector<reco::Track> 
+TriggerAnalyzerModule::recoTrackFilter(const vector<edm::ParameterSet> filters, edm::Event &event, vector<reco::Track> inputTrackSet)
+{
+  vector<reco::Track> filteredRecoTrack;
+  if(filters.size())
+    {
+      for(uint j = 0; j < filters.size(); j++)
+        {
+          if(filters[j].getParameter<string>("type") == "filterObject")
+            {
+              event.getByLabel(triggerSummaryLabel_, triggerSummary);
+              trigger::TriggerObjectCollection allTriggerObjects = triggerSummary->getObjects(); 
+              string filterName = filters[j].getParameter<string>("filterObjectName");
+              edm::InputTag filterTag = edm::InputTag(filterName, "", filterTag_);
+              size_t filterIndex = (*triggerSummary).filterIndex(filterTag);
+              trigger::TriggerObjectCollection filterObjects;
+              if(filterIndex < (*triggerSummary).sizeFilters())
+                { 
+                  const trigger::Keys &keysObjects = (*triggerSummary).filterKeys(filterIndex);
+                  for(size_t j = 0; j < keysObjects.size(); j++)
+                    {
+                      trigger::TriggerObject foundObject = (allTriggerObjects)[keysObjects[j]];
+                      filterObjects.push_back(foundObject);
+                    }
+                }
+               if(filterObjects.size() >= filters[j].getParameter<double>("number"))
+                 {
+                   for(uint m = 0; m < inputTrackSet.size(); m++)
+                     {
+                       filteredRecoTrack.push_back(inputTrackSet[m]);
+                     }
+                 } 
+             }
+          if(filters[j].getParameter<string>("type") == "3dAngle") 
+            {       
+              for(uint n = 0; n < inputTrackSet.size(); n++)
+                {
+                  bool findPartner = false;
+                  for(uint m = 0; m < inputTrackSet.size(); m++)             
+                    {
+                      if(passCosmic(inputTrackSet[n], inputTrackSet[m], filters[j].getParameter<double>("angleCut")))
+                        {
+                          findPartner = true;
+                        }  
+                    }
+                 if(findPartner)
+                   {
+                     filteredRecoTrack.push_back(inputTrackSet[n]); 
+                   }   
+                }
+             }
+        }
+   }
+   else
+     {
+       for(uint m = 0; m < inputTrackSet.size(); m++)
+         {
+           filteredRecoTrack.push_back(inputTrackSet[m]);
+         }
+     }
+   return filteredRecoTrack;
+   filteredRecoTrack.clear();
 }
 
 vector<reco::Track> 
@@ -258,8 +384,12 @@ TriggerAnalyzerModule::recoTrackSelector(const edm::InputTag recoTrackTag, edm::
           bool loose = recoTrack->normalizedChi2() < 10 && 
                                 recoTrack->hitPattern().numberOfValidMuonHits() > 0 && 
                                 recoTrack->hitPattern().muonStationsWithValidHits() > 1 &&
-                                recoTrack->pt() > ptCut_ && fabs(recoTrack->eta()) < 2.4;
-          bool passId = tagToBool(iDTag_, loose, medium, tight);  
+                                recoTrack->pt() > ptCut_ && fabs(recoTrack->eta()) < 2.4 && trackVariables(thisParticle, "Dz") < 40;
+          bool cosmic = recoTrack->hitPattern().numberOfValidMuonCSCHits() == 0 &&
+                        recoTrack->hitPattern().dtStationsWithValidHits() >= 2 && 
+                        recoTrack->hitPattern().numberOfValidMuonRPCHits() >= 2 &&
+                        recoTrack->pt() > ptCut_;
+          bool passId = tagToBool(iDTag_, cosmic,loose, medium, tight);  
           if(passId)
             {
               selectedRecoTrack.push_back(thisParticle);
@@ -315,12 +445,13 @@ TriggerAnalyzerModule::recoTrackLooper(const trigger::TriggerObjectCollection Ob
 }
 
 bool
-TriggerAnalyzerModule::tagToBool(const string tag, bool loose, bool medium, bool tight)
+TriggerAnalyzerModule::tagToBool(const string tag, bool cosmic, bool loose, bool medium, bool tight)
 {
  bool iD = false;
  if(tag == "loose") iD = loose;
  if(tag == "medium") iD = medium;
  if(tag == "tight") iD = tight;
+ if(tag == "cosmic") iD = cosmic;
  return iD;
 }
 
