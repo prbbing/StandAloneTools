@@ -21,6 +21,8 @@
 #include "DataFormats/HLTReco/interface/TriggerEvent.h"
 #include "DataFormats/HLTReco/interface/TriggerObject.h"
 #include "DataFormats/HepMCCandidate/interface/GenParticleFwd.h"
+#include "DataFormats/VertexReco/interface/Vertex.h"
+#include "DataFormats/VertexReco/interface/VertexFwd.h"
 #include "DataFormats/HepMCCandidate/interface/GenParticle.h"
 
 #include "FWCore/Framework/interface/EDAnalyzer.h"
@@ -49,7 +51,7 @@ class IsolationCalculator : public edm::EDAnalyzer
 {
   public:
       void analyze (const edm::Event &, const edm::EventSetup &);
-      int chargedHadronVertex(const vector<reco::Vertex> &vertices, const pat::PackedCandidate &pfcand);
+      int chargedHadronVertex(int numVertex, const pat::PackedCandidate &pfcand);
       bool genMatching(reco::GenParticle &genParticle, double selectId, double vetoId);  
       IsolationCalculator (const edm::ParameterSet &);
       ~IsolationCalculator();
@@ -62,10 +64,11 @@ class IsolationCalculator : public edm::EDAnalyzer
       TH1D* chargedHadronPtHist;
       TH1D* sumPUPtHist;
       TH1D* muonPVIndexHist;
+      TH1D* chargedHadronPVIndexHist;
       bool New_;
       double match_;
       double veto_;
-      edm::EDGetTokenT<vector<reco::Vertex>> vertices_;;
+      edm::InputTag vertex_;
 };
 
 
