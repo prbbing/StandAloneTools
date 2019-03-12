@@ -1,6 +1,6 @@
 #############################################
 #
-#  I am impressed if you actually checking
+#  I am impressed if you are actually checking
 #  this horseshit out
 #  Send me the following code I'll buy you 
 #  a coffee
