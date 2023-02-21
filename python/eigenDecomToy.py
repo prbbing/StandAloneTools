@@ -28,18 +28,17 @@ print(cov)
 
 values, vectors = linalg.eig(cov)
 
+eigVec = []
+for i in range(1, len(vectors)):
+  eigVec.append(vectors[:,i])
+
 print("Eigen vectors: ")
-print(vectors)
+print(eigVec)
 print("Eigen values: ")
 print(values)
 
-indices = []
-for i in range(0, len(values)):
-  if values[i] > 1E-10:
-    indices.append(i)
-
 print("Checking orthogonality: ")
-for i in indices:
-  for j in indices:
+for i in range(1, len(eigVec)):
+  for j in range(1, len(eigVec)):
     if i != j:
-      print(np.dot(vectors[i], vectors[j]))
+      print(np.dot(eigVec[i], eigVec[j]))
